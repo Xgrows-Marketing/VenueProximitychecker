@@ -177,51 +177,50 @@
             border-top: none;
         }
 
-        .distance-pair {
+        .alert-banner {
+            background: #ff4757;
+            color: white;
+            padding: 12px 20px;
+            border-radius: 8px;
+            text-align: center;
+            font-weight: 600;
+            margin-bottom: 15px;
+            font-size: 0.95rem;
+        }
+
+        .distance-row {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 15px;
-            margin: 10px 0;
-            border-radius: 10px;
-            transition: all 0.3s ease;
+            padding: 8px 15px;
+            margin: 3px 0;
+            border-radius: 6px;
+            background: #f8f9fa;
+            border-left: 3px solid #e9ecef;
+            font-size: 0.9rem;
         }
 
-        .distance-pair.close {
+        .distance-row.close {
             background: #ffe6e6;
-            border-left: 5px solid #ff4757;
+            border-left-color: #ff4757;
         }
 
-        .distance-pair.medium {
-            background: #fff3cd;
-            border-left: 5px solid #ffc107;
-        }
-
-        .distance-pair.far {
-            background: #e6f7e6;
-            border-left: 5px solid #2ed573;
-        }
-
-        .venue-names {
-            font-weight: 600;
+        .venues {
+            font-weight: 500;
             color: #333;
+            flex: 1;
         }
 
         .distance {
-            font-size: 1.1rem;
-            font-weight: bold;
+            font-weight: 600;
+            color: #666;
+            min-width: 50px;
+            text-align: right;
         }
 
         .distance.close {
             color: #ff4757;
-        }
-
-        .distance.medium {
-            color: #ffc107;
-        }
-
-        .distance.far {
-            color: #2ed573;
+            font-weight: 700;
         }
 
         .loading {
@@ -551,25 +550,25 @@
                 // Display results
                 let html = resultsContent.innerHTML; // Keep any error messages
 
-                if (proximityPairs.length > 0) {
+                // Sort distances: close pairs first (≤10 miles), then rest in ascending order
+                const closePairs = distances.filter(pair => pair.distance <= 10).sort((a, b) => a.distance - b.distance);
+                const otherPairs = distances.filter(pair => pair.distance > 10).sort((a, b) => a.distance - b.distance);
+                const sortedDistances = [...closePairs, ...otherPairs];
+
+                if (closePairs.length > 0) {
                     html += `
-                        <div class="proximity-summary">
-                            <h3>⚠️ Found ${proximityPairs.length} venue pair(s) within 10 miles!</h3>
-                            <p>These venues might be too close to each other</p>
+                        <div class="alert-banner">
+                            🚨 ${closePairs.length} venue pair(s) within 10 miles
                         </div>
                     `;
                 }
 
-                distances.forEach(pair => {
-                    const distanceClass = pair.distance <= 10 ? 'close' : pair.distance <= 25 ? 'medium' : 'far';
+                sortedDistances.forEach((pair, index) => {
+                    const isClose = pair.distance <= 10;
                     html += `
-                        <div class="distance-pair ${distanceClass}">
-                            <div class="venue-names">
-                                ${pair.venue1} ↔ ${pair.venue2}
-                            </div>
-                            <div class="distance ${distanceClass}">
-                                ${pair.distance.toFixed(1)} miles
-                            </div>
+                        <div class="distance-row ${isClose ? 'close' : ''}">
+                            <div class="venues">${pair.venue1} ↔ ${pair.venue2}</div>
+                            <div class="distance ${isClose ? 'close' : ''}">${pair.distance.toFixed(1)}mi</div>
                         </div>
                     `;
                 });
