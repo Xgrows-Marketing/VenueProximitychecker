@@ -372,22 +372,72 @@
         }
 
         async function geocodeAddress(address) {
-            try {
-                // Using Nominatim (OpenStreetMap) API - free and doesn't require API key
-                const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1`);
-                const data = await response.json();
-                
-                if (data && data.length > 0) {
-                    return {
-                        lat: parseFloat(data[0].lat),
-                        lng: parseFloat(data[0].lon)
-                    };
+            // Try multiple geocoding approaches for better success rate
+            const methods = [
+                // Method 1: Nominatim with country bias
+                async () => {
+                    const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1&countrycodes=gb,us,ca,au`);
+                    const data = await response.json();
+                    if (data && data.length > 0) {
+                        return {
+                            lat: parseFloat(data[0].lat),
+                            lng: parseFloat(data[0].lon)
+                        };
+                    }
+                    return null;
+                },
+                // Method 2: Nominatim with structured query for UK postcodes
+                async () => {
+                    // Extract UK postcode if present
+                    const postcodeMatch = address.match(/([A-Z]{1,2}[0-9][A-Z0-9]?\s?[0-9][A-Z]{2})/i);
+                    if (postcodeMatch) {
+                        const postcode = postcodeMatch[1];
+                        const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&postalcode=${encodeURIComponent(postcode)}&country=United Kingdom&limit=1`);
+                        const data = await response.json();
+                        if (data && data.length > 0) {
+                            return {
+                                lat: parseFloat(data[0].lat),
+                                lng: parseFloat(data[0].lon)
+                            };
+                        }
+                    }
+                    return null;
+                },
+                // Method 3: Try with simplified address (remove specific building names)
+                async () => {
+                    const simplified = address.replace(/^[^,]+,\s*/, ''); // Remove first part before comma
+                    const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(simplified)}&limit=1`);
+                    const data = await response.json();
+                    if (data && data.length > 0) {
+                        return {
+                            lat: parseFloat(data[0].lat),
+                            lng: parseFloat(data[0].lon)
+                        };
+                    }
+                    return null;
                 }
-                throw new Error('Address not found');
-            } catch (error) {
-                console.error('Geocoding error:', error);
-                return null;
+            ];
+
+            // Try each method until one succeeds
+            for (let i = 0; i < methods.length; i++) {
+                try {
+                    const result = await methods[i]();
+                    if (result) {
+                        console.log(`Geocoding succeeded with method ${i + 1} for: ${address}`);
+                        return result;
+                    }
+                } catch (error) {
+                    console.warn(`Geocoding method ${i + 1} failed:`, error);
+                }
+                
+                // Add delay between attempts
+                if (i < methods.length - 1) {
+                    await new Promise(resolve => setTimeout(resolve, 300));
+                }
             }
+
+            console.error('All geocoding methods failed for:', address);
+            return null;
         }
 
         function calculateDistance(lat1, lng1, lat2, lng2) {
@@ -436,27 +486,49 @@
 
                 // Check if any geocoding failed
                 const failedVenues = validVenues.filter(venue => !venue.coordinates);
+                const successfulVenues = validVenues.filter(venue => venue.coordinates);
+                
                 if (failedVenues.length > 0) {
-                    resultsContent.innerHTML = `
+                    let errorHtml = `
                         <div class="error">
-                            Failed to geocode the following addresses:
+                            <h4>⚠️ Could not locate ${failedVenues.length} address(es):</h4>
                             <ul>
-                                ${failedVenues.map(venue => `<li>${venue.name}: ${venue.address}</li>`).join('')}
+                                ${failedVenues.map(venue => `<li><strong>${venue.name}:</strong> ${venue.address}</li>`).join('')}
                             </ul>
-                            Please check the addresses and try again.
+                            <p><strong>Suggestions:</strong></p>
+                            <ul>
+                                <li>Try using just the postcode/zip code</li>
+                                <li>Remove specific building names and use street address only</li>
+                                <li>For UK addresses, ensure postcode format like "SW1A 1AA"</li>
+                                <li>Check for typos in the address</li>
+                            </ul>
                         </div>
                     `;
+                    
+                    if (successfulVenues.length >= 2) {
+                        errorHtml += `<p style="text-align: center; margin: 20px 0; color: #666;">Showing distances for the ${successfulVenues.length} successfully located venues:</p>`;
+                    } else {
+                        resultsContent.innerHTML = errorHtml;
+                        return;
+                    }
+                    
+                    resultsContent.innerHTML = errorHtml;
+                } else {
+                    resultsContent.innerHTML = '';
+                }
+
+                if (successfulVenues.length < 2) {
                     return;
                 }
 
-                // Calculate distances between all pairs
+                // Calculate distances between all pairs of successful venues
                 const distances = [];
                 const proximityPairs = [];
 
-                for (let i = 0; i < validVenues.length; i++) {
-                    for (let j = i + 1; j < validVenues.length; j++) {
-                        const venue1 = validVenues[i];
-                        const venue2 = validVenues[j];
+                for (let i = 0; i < successfulVenues.length; i++) {
+                    for (let j = i + 1; j < successfulVenues.length; j++) {
+                        const venue1 = successfulVenues[i];
+                        const venue2 = successfulVenues[j];
                         const distance = calculateDistance(
                             venue1.coordinates.lat, venue1.coordinates.lng,
                             venue2.coordinates.lat, venue2.coordinates.lng
@@ -477,7 +549,7 @@
                 }
 
                 // Display results
-                let html = '';
+                let html = resultsContent.innerHTML; // Keep any error messages
 
                 if (proximityPairs.length > 0) {
                     html += `
